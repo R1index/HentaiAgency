@@ -8,6 +8,7 @@ from db.database import db, ensure_user
 from services.formatting import format_currency, format_plain, format_rate
 from services.gacha import rarity_roll, pick_by_rarity, GACHA_COST, DUP_CASHBACK, rarity_emoji
 from models.girl_pool import load_pool
+from services.image_paths import allowed_roots, is_within_allowed
 
 class Gacha(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -26,10 +27,22 @@ class Gacha(commands.Cog):
             return image_url, attachments
         if not image_path:
             return None, attachments
-        path = Path(str(image_path)).expanduser()
-        if not path.is_absolute():
-            path = Path(os.getenv("GIRLS_IMAGE_ROOT", "")) / path
-        if not path.exists() or not path.is_file():
+        candidate = Path(str(image_path)).expanduser()
+        roots = allowed_roots()
+        if candidate.is_absolute():
+            path = candidate.resolve()
+        else:
+            resolved: Optional[Path] = None
+            for root in roots:
+                attempt = (root / candidate).resolve()
+                if not is_within_allowed(attempt, roots):
+                    continue
+                if attempt.exists():
+                    resolved = attempt
+                    break
+            path = resolved if resolved is not None else candidate.resolve()
+
+        if not is_within_allowed(path, roots) or not path.exists() or not path.is_file():
             return None, attachments
         base_name = "".join(ch if ch.isalnum() else "_" for ch in girl["name"].lower()) or "girl"
         filename = f"gacha_{base_name}_{path.name.replace(' ', '_')}"

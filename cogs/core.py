@@ -42,35 +42,62 @@ class Core(commands.Cog):
         compute_tick(interaction.user.id)
         con = db()
         cur = con.cursor()
-        cur.execute("UPDATE users SET money = money + 1000 WHERE user_id=?", (interaction.user.id,))
-        # starter candidate: first N if any
-        cur.execute("SELECT name FROM user_girls WHERE user_id=?", (interaction.user.id,))
-        have_any = cur.fetchone()
-        if not have_any:
-            # default starter
-            cur.execute(
-                """
-                INSERT OR IGNORE INTO user_girls(
-                    user_id,
-                    name,
-                    rarity,
-                    level,
-                    xp,
-                    income,
-                    popularity,
-                    fans,
-                    stamina,
-                    is_working,
-                    image_url,
-                    specialty
+        cur.execute(
+            "SELECT starter_claimed FROM users WHERE user_id=?",
+            (interaction.user.id,),
+        )
+        claimed_row = cur.fetchone()
+        already_claimed = bool(claimed_row and claimed_row["starter_claimed"])
+
+        cur.execute("SELECT 1 FROM user_girls WHERE user_id=?", (interaction.user.id,))
+        have_any = cur.fetchone() is not None
+
+        if already_claimed or have_any:
+            if not already_claimed and have_any:
+                cur.execute(
+                    "UPDATE users SET starter_claimed=1 WHERE user_id=?",
+                    (interaction.user.id,),
                 )
-                VALUES(?,?,?,?,?,?,?,0,100,1,?,?)
-                """,
-                (interaction.user.id, "Aya", "N", 1, "0", 5, 100, None, "Singer"),
+                con.commit()
+            con.close()
+            await interaction.followup.send(
+                "You have already started your agency. Use /agency to review your roster.",
+                ephemeral=True,
             )
+            return
+
+        cur.execute(
+            "UPDATE users SET money = money + 1000, starter_claimed = 1 WHERE user_id=?",
+            (interaction.user.id,),
+        )
+        # default starter
+        cur.execute(
+            """
+            INSERT OR IGNORE INTO user_girls(
+                user_id,
+                name,
+                rarity,
+                level,
+                xp,
+                income,
+                popularity,
+                fans,
+                stamina,
+                is_working,
+                image_url,
+                specialty
+            )
+            VALUES(?,?,?,?,?,?,?,0,100,1,?,?)
+            """,
+            (interaction.user.id, "Aya", "N", 1, "0", 5, 100, None, "Singer"),
+        )
+
         con.commit()
         con.close()
-        await interaction.followup.send("Agency created! You received 1000 💵 and a starter girl. Use /gacha and /agency.", ephemeral=True)
+        await interaction.followup.send(
+            "Agency created! You received 1000 💵 and a starter girl. Use /gacha and /agency.",
+            ephemeral=True,
+        )
 
     @app_commands.command(name="agency", description="Show your agency overview")
     async def agency(self, interaction: discord.Interaction):

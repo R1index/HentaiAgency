@@ -20,8 +20,8 @@ RARITY_WEIGHTS: Sequence[Tuple[str, int]] = (
 )
 
 # Scouting economy.
-GACHA_COST: int = 1250
-DUP_CASHBACK: float = 0.45
+GACHA_COST: int = 500
+DUP_CASHBACK: float = 0.50
 
 # Progression tuning.
 LEVEL_INCOME_GROWTH: float = 0.05
