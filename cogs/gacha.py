@@ -79,6 +79,11 @@ class Gacha(commands.Cog):
         if exists:
             cashback = int(round(GACHA_COST * DUP_CASHBACK))
             money += cashback
+            if image_reference:
+                cur.execute(
+                    "UPDATE user_girls SET image_url=? WHERE user_id=? AND name=?",
+                    (str(image_reference), interaction.user.id, g["name"]),
+                )
             description = (
                 f"🎰 Duplicate **{g['name']}** {rarity_emoji(g['rarity'])}. "
                 f"Cashback: +{format_currency(cashback)}"
