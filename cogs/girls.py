@@ -12,7 +12,7 @@ from db.database import db, ensure_user
 from services.formatting import format_currency, format_plain, format_rate
 from services.gacha import rarity_emoji
 from services.game import compute_tick
-from services.balance import level_xp_required
+from services.balance import format_xp, level_xp_required, xp_to_decimal
 from models.girl_pool import load_pool
 
 
@@ -185,12 +185,12 @@ class GirlsPaginator(discord.ui.View):
         stamina = format_plain(current["stamina"])
         status = "Working" if current["is_working"] else "Resting"
         embed.add_field(name="⚡ Stamina", value=f"{stamina}% • {status}", inline=True)
-        xp = float(current.get("xp", 0))
+        xp = xp_to_decimal(current.get("xp", 0))
         requirement = level_xp_required(current_level)
         if requirement is None:
             xp_text = "MAX"
         else:
-            xp_text = f"{int(xp)}/{int(requirement)}"
+            xp_text = f"{format_xp(xp)}/{format_xp(requirement)}"
         embed.add_field(name="📈 Experience", value=xp_text, inline=True)
         embed.add_field(name="🗂️ Specialty", value=current["specialty"] or "-", inline=True)
         embed.set_footer(text=f"Page {self.page + 1}/{len(self.rows)}")

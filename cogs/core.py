@@ -3,7 +3,7 @@ from discord import app_commands
 from discord.ext import commands
 from db.database import init_db, ensure_user, db
 from services.formatting import format_currency, format_plain, format_rate
-from services.balance import level_xp_required
+from services.balance import format_xp, level_xp_required, xp_to_decimal
 from services.gacha import rarity_emoji
 from services.game import compute_tick
 
@@ -13,11 +13,11 @@ def girl_line(row) -> str:
     status = "⚡" if row["is_working"] else "🛌"
     level = int(row["level"])
     requirement = level_xp_required(level)
-    xp = float(row.get("xp", 0))
+    xp = xp_to_decimal(row.get("xp", 0))
     if requirement is None:
         xp_text = "MAX"
     else:
-        xp_text = f"{int(xp)}/{int(requirement)} XP"
+        xp_text = f"{format_xp(xp)}/{format_xp(requirement)} XP"
     return (
         f"— **{row['name']}** {rarity_emoji(row['rarity'])} | "
         f"⬆️Lv.{int(row['level'])} | "
@@ -61,7 +61,7 @@ class Core(commands.Cog):
                 )
                 VALUES(?,?,?,?,?,?,?,0,100,1,?,?)
                 """,
-                (interaction.user.id, "Aya", "N", 1, 0, 5, 100, None, "Singer"),
+                (interaction.user.id, "Aya", "N", 1, "0", 5, 100, None, "Singer"),
             )
         con.commit()
         con.close()

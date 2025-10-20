@@ -8,6 +8,8 @@ from services.balance import (
     STAM_DOWN_SEC_PER_1,
     STAM_UP_SEC_PER_1,
     level_xp_required,
+    xp_to_decimal,
+    xp_to_storage,
 )
 
 def stamina_tick(stamina: float, is_working: bool, dt: float) -> Tuple[float, bool, float, float]:
@@ -82,14 +84,14 @@ def compute_tick(user_id: int) -> Dict[str, Any]:
         stamina = float(g["stamina"])
         is_working = bool(g["is_working"])
         level = int(g["level"])
-        xp = float(g["xp"])
+        xp = xp_to_decimal(g["xp"])
 
         new_stam, new_working, work_secs, rest_secs = stamina_tick(stamina, is_working, dt)
 
         if work_secs > 0:
             money_gain += income * work_secs
             fans += pop * FANS_GAIN_PER_POP * work_secs
-            xp += work_secs
+            xp += xp_to_decimal(work_secs)
 
         requirement = level_xp_required(level)
         leveled = False
@@ -101,12 +103,12 @@ def compute_tick(user_id: int) -> Dict[str, Any]:
             leveled = True
 
         if requirement is None:
-            xp = 0.0
+            xp = xp_to_decimal(0)
 
         if leveled:
             leveled_up.append(g["id"])
 
-        updates.append((new_stam, int(new_working), fans, xp, level, income, g["id"]))
+        updates.append((new_stam, int(new_working), fans, xp_to_storage(xp), level, income, g["id"]))
         total_fans += fans
 
     passive_gain = total_fans * PASSIVE_PER_FAN_PER_SEC * dt
@@ -114,10 +116,10 @@ def compute_tick(user_id: int) -> Dict[str, Any]:
     new_money = float(row["money"]) + money_gain
 
     cur.execute("UPDATE users SET money=?, last_tick=? WHERE user_id=?", (new_money, now, user_id))
-    for s, w, f, xp, lvl, inc, gid in updates:
+    for s, w, f, xp_value, lvl, inc, gid in updates:
         cur.execute(
             "UPDATE user_girls SET stamina=?, is_working=?, fans=?, xp=?, level=?, income=? WHERE id=?",
-            (s, w, f, xp, lvl, inc, gid),
+            (s, w, f, xp_value, lvl, inc, gid),
         )
     con.commit()
     con.close()

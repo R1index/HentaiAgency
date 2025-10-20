@@ -112,7 +112,7 @@ class Gacha(commands.Cog):
                 g["name"],
                 g["rarity"],
                 1,
-                0,
+                "0",
                 g["income"],
                 g["popularity"],
                 image_reference,
