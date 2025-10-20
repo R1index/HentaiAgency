@@ -260,7 +260,7 @@ class GirlsPaginator(discord.ui.View):
             return
         new_level = int(girl["level"]) + 1
         old_income = float(girl["income"])
-        new_income = round(old_income * 0.005, 3)
+        new_income = round(old_income * 1.005, 5)
         cur.execute(
             "UPDATE user_girls SET level=?, income=? WHERE id=?",
             (new_level, new_income, girl["id"]),
