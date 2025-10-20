@@ -3,6 +3,7 @@ from discord import app_commands
 from discord.ext import commands
 from db.database import init_db, ensure_user, db
 from services.formatting import format_currency, format_plain, format_rate
+from services.balance import format_xp, level_xp_required, xp_to_decimal
 from services.gacha import rarity_emoji
 from services.game import compute_tick
 
@@ -10,11 +11,18 @@ from services.game import compute_tick
 def girl_line(row) -> str:
     stamina = format_plain(row["stamina"])
     status = "⚡" if row["is_working"] else "🛌"
+    level = int(row["level"])
+    requirement = level_xp_required(level)
+    xp = xp_to_decimal(row.get("xp", 0))
+    if requirement is None:
+        xp_text = "MAX"
+    else:
+        xp_text = f"{format_xp(xp)}/{format_xp(requirement)} XP"
     return (
         f"— **{row['name']}** {rarity_emoji(row['rarity'])} | "
         f"⬆️Lv.{int(row['level'])} | "
         f"💰{format_rate(row['income'])} | 🌟{format_plain(row['popularity'])} | "
-        f"❤️{format_plain(row['fans'])} | 🏷️ {row['specialty'] or '-'} | {status}{stamina}%"
+        f"❤️{format_plain(row['fans'])} | 📈{xp_text} | 🏷️ {row['specialty'] or '-'} | {status}{stamina}%"
     )
 
 class Core(commands.Cog):
@@ -35,10 +43,26 @@ class Core(commands.Cog):
         have_any = cur.fetchone()
         if not have_any:
             # default starter
-            cur.execute("""
-                INSERT OR IGNORE INTO user_girls(user_id, name, rarity, level, income, popularity, fans, stamina, is_working, image_url, specialty)
-                VALUES(?,?,?,?,?,?,0,100,1,?,?)
-            """, (interaction.user.id, "Aya", "N", 1, 5, 100, None, "Singer"))
+            cur.execute(
+                """
+                INSERT OR IGNORE INTO user_girls(
+                    user_id,
+                    name,
+                    rarity,
+                    level,
+                    xp,
+                    income,
+                    popularity,
+                    fans,
+                    stamina,
+                    is_working,
+                    image_url,
+                    specialty
+                )
+                VALUES(?,?,?,?,?,?,?,0,100,1,?,?)
+                """,
+                (interaction.user.id, "Aya", "N", 1, "0", 5, 100, None, "Singer"),
+            )
         con.commit()
         con.close()
         await interaction.followup.send("Agency created! You received 1000 💵 and a starter girl. Use /gacha and /agency.", ephemeral=True)
