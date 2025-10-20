@@ -6,3 +6,7 @@ __pycache__/
 *.db
 idol_agency.db
 .env
+# Local girl artwork
+data/girls_images/*
+!data/girls_images/.gitkeep
+!data/girls_images/README.md

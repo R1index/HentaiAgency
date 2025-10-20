@@ -30,6 +30,13 @@ python -m pip install -U -r requirements.txt
 python -m bot
 ```
 
+### Local girl images
+
+- Add PNG/JPG files inside `data/girls_images/` (configurable via `GIRLS_IMAGE_ROOT`).
+- Reference them in `data/girls.json` using the `image` field, e.g. `"image": "aya.png"`.
+- The repository ships with an empty `data/girls_images/` folder (`.gitkeep`) so you can manage your own art assets without committing binaries.
+- Remote URLs continue to work via the `image_url` field if needed.
+
 ## Commands
 
 - `/start` — create your agency and receive a starter girl
