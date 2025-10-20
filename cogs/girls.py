@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import List, Optional, Sequence, Tuple
 
@@ -11,6 +12,7 @@ from db.database import db, ensure_user
 from services.formatting import format_currency, format_plain, format_rate
 from services.gacha import rarity_emoji
 from services.game import compute_tick
+from models.girl_pool import load_pool
 
 
 def _window_bounds(total: int, index: int, limit: int) -> tuple[int, int]:
@@ -48,9 +50,16 @@ class GirlSelect(discord.ui.Select):
 
 
 class GirlsPaginator(discord.ui.View):
-    def __init__(self, user_id: int, rows: Sequence[object], money: float) -> None:
+    def __init__(
+        self,
+        user_id: int,
+        rows: Sequence[object],
+        money: float,
+        pool_lookup: Optional[dict[str, dict[str, object]]] = None,
+    ) -> None:
         super().__init__(timeout=180)
         self.user_id = user_id
+        self.pool_lookup: dict[str, dict[str, object]] = pool_lookup or {}
         self.rows = [self._hydrate_row(dict(r)) for r in rows]
         self.money = float(money)
         self.page = 0
@@ -59,22 +68,48 @@ class GirlsPaginator(discord.ui.View):
         self.add_item(self.select_menu)
         self.update_components()
 
-    @staticmethod
-    def _hydrate_row(row: dict) -> dict:
+    def _resolve_reference(self, ref: Optional[str]) -> tuple[Optional[str], Optional[str]]:
+        if not ref:
+            return None, None
+        ref_str = str(ref).strip()
+        if not ref_str:
+            return None, None
+        lower = ref_str.lower()
+        if lower.startswith("http://") or lower.startswith("https://"):
+            return ref_str, None
+        path = Path(ref_str).expanduser()
+        if not path.is_absolute():
+            env_root = os.getenv("GIRLS_IMAGE_ROOT")
+            candidate_roots = []
+            if env_root:
+                candidate_roots.append(Path(env_root).expanduser())
+            candidate_roots.append(Path("data/girls_images").resolve())
+            candidate_roots.append(Path("data").resolve())
+            for root in candidate_roots:
+                attempt = (root / path).resolve()
+                if attempt.exists():
+                    path = attempt
+                    break
+            else:
+                # fall back to default data folder even if missing so the warning can be surfaced later
+                path = (Path("data/girls_images") / path).resolve()
+        return None, str(path)
+
+    def _hydrate_row(self, row: dict) -> dict:
         ref = row.get("image_url")
         if ref:
-            ref_str = str(ref)
-            if ref_str.lower().startswith("http://") or ref_str.lower().startswith("https://"):
-                row["image_url"] = ref_str
-                row["image_path"] = None
-                return row
-            path = Path(ref_str).expanduser()
-            if not path.is_absolute():
-                path = Path("data") / path
-            row["image_url"] = None
-            row["image_path"] = str(path)
+            image_url, image_path = self._resolve_reference(ref)
         else:
-            row["image_path"] = None
+            image_url, image_path = None, None
+
+        if not image_url and not image_path:
+            fallback = self.pool_lookup.get(row.get("name")) if self.pool_lookup else None
+            if fallback:
+                pool_ref = fallback.get("image_url") or fallback.get("image_path")
+                image_url, image_path = self._resolve_reference(pool_ref)
+
+        row["image_url"] = image_url
+        row["image_path"] = image_path
         return row
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
@@ -343,13 +378,32 @@ class Girls(commands.Cog):
             "SELECT * FROM user_girls WHERE user_id=? ORDER BY rarity DESC, income DESC, name ASC",
             (interaction.user.id,),
         )
-        rows = cur.fetchall()
+        rows_data = cur.fetchall()
+        pool_path = os.getenv("GIRLS_JSON_PATH", "data/girls.json")
+        pool_entries, _pool_warn = load_pool(pool_path)
+        pool_lookup: dict[str, dict[str, object]] = {entry["name"]: entry for entry in pool_entries}
+        rows = [dict(r) for r in rows_data]
+        updates: list[tuple[str, int]] = []
+        for row in rows:
+            if row.get("image_url"):
+                continue
+            fallback = pool_lookup.get(row.get("name"))
+            if not fallback:
+                continue
+            ref = fallback.get("image_url") or fallback.get("image_path")
+            if not ref:
+                continue
+            row["image_url"] = ref
+            updates.append((str(ref), row["id"]))
+        if updates:
+            cur.executemany("UPDATE user_girls SET image_url=? WHERE id=?", updates)
+            con.commit()
         con.close()
         if not rows:
             await interaction.response.send_message("You have no girls yet. Try /gacha", ephemeral=True)
             return
         money = float(user_row["money"]) if user_row else 0.0
-        view = GirlsPaginator(interaction.user.id, rows, money)
+        view = GirlsPaginator(interaction.user.id, rows, money, pool_lookup)
         embed, attachments = view.make_embed()
         kwargs = {"embed": embed, "view": view, "ephemeral": True}
         if attachments:

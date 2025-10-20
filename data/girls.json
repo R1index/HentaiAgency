@@ -4,8 +4,7 @@
     "rarity": "N",
     "income": 6,
     "popularity": 110,
-    "specialty": "Singer",
-    "image_url": "https://example.com/aya.png"
+    "specialty": "Singer"
   },
   {
     "name": "Rin",
@@ -26,8 +25,7 @@
     "rarity": "SSR",
     "income": 24,
     "popularity": 550,
-    "specialty": "Actress",
-    "image_url": "https://example.com/sora.jpg"
+    "specialty": "Actress"
   },
   {
     "name": "Yuki",

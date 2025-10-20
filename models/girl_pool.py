@@ -1,5 +1,6 @@
 from typing import List, Dict, Any, Optional
 import json
+import os
 from pathlib import Path
 
 ALLOWED_RARITIES = {"N","R","SR","SSR","UR"}
@@ -17,7 +18,9 @@ def validate_entry(e: Dict[str, Any]) -> Optional[str]:
         return "Income/Popularity must be numbers"
     return None
 
-def _resolve_image(e: Dict[str, Any], base_dir: Path, warnings: List[str]) -> tuple[Optional[str], Optional[str]]:
+def _resolve_image(
+    e: Dict[str, Any], base_dir: Path, warnings: List[str]
+) -> tuple[Optional[str], Optional[str]]:
     raw = e.get("image") or e.get("image_path") or e.get("image_url")
     if raw is None:
         return None, None
@@ -28,11 +31,40 @@ def _resolve_image(e: Dict[str, Any], base_dir: Path, warnings: List[str]) -> tu
     if lower.startswith("http://") or lower.startswith("https://"):
         return raw_str, None
     candidate = Path(raw_str)
-    if not candidate.is_absolute():
-        candidate = (base_dir / candidate).resolve()
-    if not candidate.exists():
-        warnings.append(f"Image file not found for '{e.get('name', '?')}': {candidate}")
-    return None, str(candidate)
+    env_root = os.getenv("GIRLS_IMAGE_ROOT")
+    search_roots: List[Path] = []
+    if env_root:
+        search_roots.append(Path(env_root).expanduser())
+    default_folder = (base_dir / "girls_images").resolve()
+    if default_folder not in search_roots:
+        search_roots.append(default_folder)
+    if base_dir not in search_roots:
+        search_roots.append(base_dir)
+
+    resolved: Optional[Path] = None
+    if candidate.is_absolute():
+        resolved = candidate
+        if not resolved.exists():
+            warnings.append(
+                f"Image file not found for '{e.get('name', '?')}': {resolved}"
+            )
+        return None, str(resolved)
+
+    for root in search_roots:
+        attempt = (root / candidate).resolve()
+        if attempt.exists():
+            resolved = attempt
+            break
+
+    if resolved is None:
+        # Prefer the first search root as the intended destination
+        target_root = search_roots[0] if search_roots else base_dir
+        resolved = (target_root / candidate).resolve()
+        warnings.append(
+            f"Image file not found for '{e.get('name', '?')}': {resolved}"
+        )
+
+    return None, str(resolved)
 
 
 def load_pool(path: str) -> (List[Dict[str, Any]], Optional[str]):
