@@ -13,7 +13,12 @@ def girl_line(row) -> str:
     status = "⚡" if row["is_working"] else "🛌"
     level = int(row["level"])
     requirement = level_xp_required(level)
-    xp = xp_to_decimal(row.get("xp", 0))
+    if isinstance(row, dict):
+        xp_value = row.get("xp", 0)
+    else:
+        keys = row.keys()
+        xp_value = row["xp"] if "xp" in keys else 0
+    xp = xp_to_decimal(xp_value)
     if requirement is None:
         xp_text = "MAX"
     else:
