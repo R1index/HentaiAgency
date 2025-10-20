@@ -2,38 +2,38 @@
   {
     "name": "Aya",
     "rarity": "N",
-    "income": 5,
-    "popularity": 100,
+    "income": 6,
+    "popularity": 110,
     "specialty": "Singer",
     "image_url": "https://example.com/aya.png"
   },
   {
     "name": "Rin",
     "rarity": "R",
-    "income": 8,
-    "popularity": 150,
+    "income": 10,
+    "popularity": 180,
     "specialty": "Dancer"
   },
   {
     "name": "Miko",
     "rarity": "SR",
-    "income": 12,
-    "popularity": 250,
+    "income": 15,
+    "popularity": 320,
     "specialty": "Model"
   },
   {
     "name": "Sora",
     "rarity": "SSR",
-    "income": 20,
-    "popularity": 400,
+    "income": 24,
+    "popularity": 550,
     "specialty": "Actress",
     "image_url": "https://example.com/sora.jpg"
   },
   {
     "name": "Yuki",
     "rarity": "UR",
-    "income": 35,
-    "popularity": 700,
+    "income": 40,
+    "popularity": 900,
     "specialty": "Influencer"
   }
 ]

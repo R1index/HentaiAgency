@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import List, Optional, Sequence
+from pathlib import Path
+from typing import List, Optional, Sequence, Tuple
 
 import discord
 from discord import app_commands
@@ -50,13 +51,31 @@ class GirlsPaginator(discord.ui.View):
     def __init__(self, user_id: int, rows: Sequence[object], money: float) -> None:
         super().__init__(timeout=180)
         self.user_id = user_id
-        self.rows = [dict(r) for r in rows]
+        self.rows = [self._hydrate_row(dict(r)) for r in rows]
         self.money = float(money)
         self.page = 0
         self.message: Optional[discord.Message] = None
         self.select_menu = GirlSelect(self)
         self.add_item(self.select_menu)
         self.update_components()
+
+    @staticmethod
+    def _hydrate_row(row: dict) -> dict:
+        ref = row.get("image_url")
+        if ref:
+            ref_str = str(ref)
+            if ref_str.lower().startswith("http://") or ref_str.lower().startswith("https://"):
+                row["image_url"] = ref_str
+                row["image_path"] = None
+                return row
+            path = Path(ref_str).expanduser()
+            if not path.is_absolute():
+                path = Path("data") / path
+            row["image_url"] = None
+            row["image_path"] = str(path)
+        else:
+            row["image_path"] = None
+        return row
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id != self.user_id:
@@ -116,7 +135,7 @@ class GirlsPaginator(discord.ui.View):
             )
         return "\n".join(lines)
 
-    def make_embed(self) -> discord.Embed:
+    def make_embed(self) -> Tuple[discord.Embed, List[discord.File]]:
         current = self.current()
         embed = discord.Embed(
             title=f"{current['name']} {rarity_emoji(current['rarity'])}",
@@ -135,13 +154,25 @@ class GirlsPaginator(discord.ui.View):
         embed.add_field(name="⬆️ Upgrade Cost", value=format_currency(cost), inline=True)
         embed.add_field(name="🗂️ Specialty", value=current["specialty"] or "-", inline=True)
         embed.set_footer(text=f"Page {self.page + 1}/{len(self.rows)}")
-        if current["image_url"]:
-            embed.set_image(url=current["image_url"])
-        return embed
+        attachments: List[discord.File] = []
+        image_url = current.get("image_url")
+        image_path = current.get("image_path")
+        if image_url:
+            embed.set_image(url=image_url)
+        elif image_path:
+            path = Path(image_path)
+            if path.exists() and path.is_file():
+                safe_name = path.name.replace(" ", "_")
+                filename = f"girl_{current['id']}_{safe_name}"
+                file = discord.File(path, filename=filename)
+                attachments.append(file)
+                embed.set_image(url=f"attachment://{filename}")
+        return embed, attachments
 
     async def send_page(self, interaction: discord.Interaction) -> None:
         self.update_components()
-        await interaction.response.edit_message(embed=self.make_embed(), view=self)
+        embed, attachments = self.make_embed()
+        await interaction.response.edit_message(embed=embed, view=self, attachments=attachments)
 
     def reload_state(self) -> None:
         if not self.rows:
@@ -156,7 +187,7 @@ class GirlsPaginator(discord.ui.View):
             "SELECT * FROM user_girls WHERE user_id=? ORDER BY rarity DESC, income DESC, name ASC",
             (self.user_id,),
         )
-        self.rows = [dict(r) for r in cur.fetchall()]
+        self.rows = [self._hydrate_row(dict(r)) for r in cur.fetchall()]
         con.close()
         if not self.rows:
             self.page = 0
@@ -202,7 +233,8 @@ class GirlsPaginator(discord.ui.View):
             con.close()
             self.reload_state()
             if self.rows:
-                await interaction.edit_original_response(embed=self.make_embed(), view=self)
+                embed, attachments = self.make_embed()
+                await interaction.edit_original_response(embed=embed, view=self, attachments=attachments)
             else:
                 await interaction.edit_original_response(
                     content="Your roster is empty now.", view=None
@@ -214,7 +246,8 @@ class GirlsPaginator(discord.ui.View):
         con.commit()
         con.close()
         self.reload_state()
-        await interaction.edit_original_response(embed=self.make_embed(), view=self)
+        embed, attachments = self.make_embed()
+        await interaction.edit_original_response(embed=embed, view=self, attachments=attachments)
         state_text = "now resting" if new_state == 0 else "now working"
         await interaction.followup.send(f"{current['name']} is {state_text}.", ephemeral=True)
 
@@ -236,7 +269,8 @@ class GirlsPaginator(discord.ui.View):
             con.close()
             self.reload_state()
             if self.rows:
-                await interaction.edit_original_response(embed=self.make_embed(), view=self)
+                embed, attachments = self.make_embed()
+                await interaction.edit_original_response(embed=embed, view=self, attachments=attachments)
             else:
                 await interaction.edit_original_response(
                     content="Your roster is empty now.", view=None
@@ -248,7 +282,8 @@ class GirlsPaginator(discord.ui.View):
             con.close()
             self.reload_state()
             if self.rows:
-                await interaction.edit_original_response(embed=self.make_embed(), view=self)
+                embed, attachments = self.make_embed()
+                await interaction.edit_original_response(embed=embed, view=self, attachments=attachments)
             else:
                 await interaction.edit_original_response(
                     content="Your roster is empty now.", view=None
@@ -272,7 +307,8 @@ class GirlsPaginator(discord.ui.View):
         con.commit()
         con.close()
         self.reload_state()
-        await interaction.edit_original_response(embed=self.make_embed(), view=self)
+        embed, attachments = self.make_embed()
+        await interaction.edit_original_response(embed=embed, view=self, attachments=attachments)
         await interaction.followup.send(
             (
                 f"{girl['name']} upgraded to Lv.{new_level}! "
@@ -314,7 +350,11 @@ class Girls(commands.Cog):
             return
         money = float(user_row["money"]) if user_row else 0.0
         view = GirlsPaginator(interaction.user.id, rows, money)
-        await interaction.response.send_message(embed=view.make_embed(), view=view, ephemeral=True)
+        embed, attachments = view.make_embed()
+        kwargs = {"embed": embed, "view": view, "ephemeral": True}
+        if attachments:
+            kwargs["files"] = attachments
+        await interaction.response.send_message(**kwargs)
         view.message = await interaction.original_response()
 
 
