@@ -19,7 +19,8 @@ def init_db():
     CREATE TABLE IF NOT EXISTS users (
         user_id INTEGER PRIMARY KEY,
         money REAL NOT NULL DEFAULT 0,
-        last_tick INTEGER NOT NULL DEFAULT 0
+        last_tick INTEGER NOT NULL DEFAULT 0,
+        starter_claimed INTEGER NOT NULL DEFAULT 0
     );
     CREATE TABLE IF NOT EXISTS user_girls (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -56,6 +57,12 @@ def init_db():
         cur.execute("ALTER TABLE user_girls ADD COLUMN xp REAL NOT NULL DEFAULT 0")
     except sqlite3.OperationalError:
         pass
+    try:
+        cur.execute(
+            "ALTER TABLE users ADD COLUMN starter_claimed INTEGER NOT NULL DEFAULT 0"
+        )
+    except sqlite3.OperationalError:
+        pass
     con.commit()
     con.close()
 
@@ -64,6 +71,9 @@ def ensure_user(user_id: int):
     cur = con.cursor()
     cur.execute("SELECT 1 FROM users WHERE user_id=?", (user_id,))
     if not cur.fetchone():
-        cur.execute("INSERT INTO users(user_id, money, last_tick) VALUES(?,?,?)", (user_id, 0, now_ts()))
+        cur.execute(
+            "INSERT INTO users(user_id, money, last_tick, starter_claimed) VALUES(?,?,?,?)",
+            (user_id, 0, now_ts(), 0),
+        )
         con.commit()
     con.close()

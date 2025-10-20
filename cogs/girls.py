@@ -14,6 +14,7 @@ from services.gacha import rarity_emoji
 from services.game import compute_tick
 from services.balance import format_xp, level_xp_required, xp_to_decimal
 from models.girl_pool import load_pool
+from services.image_paths import allowed_roots, is_within_allowed
 
 
 def _window_bounds(total: int, index: int, limit: int) -> tuple[int, int]:
@@ -78,23 +79,22 @@ class GirlsPaginator(discord.ui.View):
         lower = ref_str.lower()
         if lower.startswith("http://") or lower.startswith("https://"):
             return ref_str, None
-        path = Path(ref_str).expanduser()
-        if not path.is_absolute():
-            env_root = os.getenv("GIRLS_IMAGE_ROOT")
-            candidate_roots = []
-            if env_root:
-                candidate_roots.append(Path(env_root).expanduser())
-            candidate_roots.append(Path("data/girls_images").resolve())
-            candidate_roots.append(Path("data").resolve())
-            for root in candidate_roots:
-                attempt = (root / path).resolve()
-                if attempt.exists():
-                    path = attempt
-                    break
-            else:
-                # fall back to default data folder even if missing so the warning can be surfaced later
-                path = (Path("data/girls_images") / path).resolve()
-        return None, str(path)
+        candidate = Path(ref_str).expanduser()
+        roots = allowed_roots()
+        if candidate.is_absolute():
+            resolved = candidate.resolve()
+            if is_within_allowed(resolved, roots) and resolved.exists():
+                return None, str(resolved)
+            return None, None
+
+        for root in roots:
+            attempt = (root / candidate).resolve()
+            if not is_within_allowed(attempt, roots):
+                continue
+            if attempt.exists():
+                return None, str(attempt)
+
+        return None, None
 
     def _hydrate_row(self, row: dict) -> dict:
         ref = row.get("image_url")

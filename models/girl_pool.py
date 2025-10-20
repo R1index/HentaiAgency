@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
+
+from services.image_paths import allowed_roots, is_within_allowed
 
 ALLOWED_RARITIES: Sequence[str] = ("N", "R", "SR", "SSR", "UR")
 
@@ -28,40 +29,39 @@ def _resolve_image(
     lower = raw_str.lower()
     if lower.startswith("http://") or lower.startswith("https://"):
         return raw_str, None
-    candidate = Path(raw_str)
-    env_root = os.getenv("GIRLS_IMAGE_ROOT")
-    search_roots: List[Path] = []
-    if env_root:
-        search_roots.append(Path(env_root).expanduser())
-    default_folder = (base_dir / "girls_images").resolve()
-    if default_folder not in search_roots:
-        search_roots.append(default_folder)
-    if base_dir not in search_roots:
-        search_roots.append(base_dir)
+    candidate = Path(raw_str).expanduser()
+    base_dir_resolved = base_dir.resolve()
+    search_roots: List[Path] = allowed_roots(
+        base_dir_resolved / "girls_images", base_dir_resolved
+    )
 
-    resolved: Optional[Path] = None
     if candidate.is_absolute():
-        resolved = candidate
+        resolved = candidate.resolve()
+        if not is_within_allowed(resolved, search_roots):
+            warnings.append(
+                f"Image path for '{e.get('name', '?')}' outside allowed directories: {resolved}"
+            )
+            return None, None
         if not resolved.exists():
             warnings.append(
                 f"Image file not found for '{e.get('name', '?')}': {resolved}"
             )
+            return None, None
         return None, str(resolved)
 
     for root in search_roots:
         attempt = (root / candidate).resolve()
+        if not is_within_allowed(attempt, search_roots):
+            continue
         if attempt.exists():
-            resolved = attempt
-            break
+            return None, str(attempt)
 
-    if resolved is None:
-        target_root = search_roots[0] if search_roots else base_dir
-        resolved = (target_root / candidate).resolve()
-        warnings.append(
-            f"Image file not found for '{e.get('name', '?')}': {resolved}"
-        )
-
-    return None, str(resolved)
+    target_root = search_roots[0] if search_roots else base_dir_resolved
+    fallback = (target_root / candidate).resolve()
+    warnings.append(
+        f"Image file not found for '{e.get('name', '?')}': {fallback}"
+    )
+    return None, None
 
 
 def _normalise_entry(
