@@ -405,7 +405,7 @@ class Girls(commands.Cog):
         money = float(user_row["money"]) if user_row else 0.0
         view = GirlsPaginator(interaction.user.id, rows, money, pool_lookup)
         embed, attachments = view.make_embed()
-        kwargs = {"embed": embed, "view": view, "ephemeral": True}
+        kwargs = {"embed": embed, "view": view}
         if attachments:
             kwargs["files"] = attachments
         await interaction.response.send_message(**kwargs)

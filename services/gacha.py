@@ -4,15 +4,15 @@ from db.database import db
 from models.girl_pool import load_pool
 
 RARITY_POOL = [
-    ("N", 45),
-    ("R", 28),
-    ("SR", 17),
-    ("SSR", 8),
-    ("UR", 2),
+    ("N", 40),
+    ("R", 30),
+    ("SR", 18),
+    ("SSR", 9),
+    ("UR", 3),
 ]
 
-GACHA_COST = 450
-DUP_CASHBACK = 0.6
+GACHA_COST = 600
+DUP_CASHBACK = 0.45
 
 def rarity_roll() -> str:
     r = random.uniform(0, 100)

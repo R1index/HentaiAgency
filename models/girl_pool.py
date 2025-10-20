@@ -3,20 +3,45 @@ import json
 import os
 from pathlib import Path
 
-ALLOWED_RARITIES = {"N","R","SR","SSR","UR"}
+ALLOWED_RARITIES = {"N", "R", "SR", "SSR", "UR"}
 
-def validate_entry(e: Dict[str, Any]) -> Optional[str]:
-    req = ["name", "rarity", "income", "popularity", "specialty"]
-    for k in req:
-        if k not in e:
-            return f"Missing field '{k}'"
-    if e["rarity"] not in ALLOWED_RARITIES:
-        return "Invalid rarity"
-    try:
-        float(e["income"]); float(e["popularity"])
-    except Exception:
-        return "Income/Popularity must be numbers"
-    return None
+
+def validate_entry(e: Dict[str, Any]) -> List[str]:
+    errors: List[str] = []
+
+    name = str(e.get("name", "")).strip()
+    if not name:
+        errors.append("Missing field 'name'")
+    else:
+        e["name"] = name
+
+    rarity_raw = str(e.get("rarity", "")).strip().upper()
+    if not rarity_raw:
+        errors.append("Missing field 'rarity'")
+    elif rarity_raw not in ALLOWED_RARITIES:
+        errors.append(f"Invalid rarity '{rarity_raw}'")
+    else:
+        e["rarity"] = rarity_raw
+
+    for field in ("income", "popularity"):
+        raw_value = e.get(field)
+        try:
+            number = float(raw_value)
+        except (TypeError, ValueError):
+            errors.append(f"{field.title()} must be a number")
+            continue
+        if number < 0:
+            errors.append(f"{field.title()} must be non-negative")
+        else:
+            e[field] = number
+
+    specialty = str(e.get("specialty", "")).strip()
+    if not specialty:
+        e["specialty"] = "-"
+    else:
+        e["specialty"] = specialty
+
+    return errors
 
 def _resolve_image(
     e: Dict[str, Any], base_dir: Path, warnings: List[str]
@@ -76,24 +101,29 @@ def load_pool(path: str) -> (List[Dict[str, Any]], Optional[str]):
         base_dir = Path(path).resolve().parent
         cleaned = []
         warnings: List[str] = []
-        for e in data:
-            err = validate_entry(e)
-            if err:
-                return [], f"Invalid entry for name='{e.get('name','?')}': {err}"
-            image_url, image_path = _resolve_image(e, base_dir, warnings)
+        for idx, entry in enumerate(data):
+            entry_dict = dict(entry)
+            problems = validate_entry(entry_dict)
+            if problems:
+                label = entry_dict.get("name") or f"entry #{idx + 1}"
+                warnings.append(
+                    f"Skipped '{label}': " + "; ".join(problems)
+                )
+                continue
+            image_url, image_path = _resolve_image(entry_dict, base_dir, warnings)
             cleaned.append({
-                "name": e["name"],
-                "rarity": e["rarity"],
-                "income": float(e["income"]),
-                "popularity": float(e["popularity"]),
-                "specialty": e["specialty"],
+                "name": entry_dict["name"],
+                "rarity": entry_dict["rarity"],
+                "income": float(entry_dict["income"]),
+                "popularity": float(entry_dict["popularity"]),
+                "specialty": entry_dict.get("specialty", "-"),
                 "image_url": image_url,
                 "image_path": image_path,
             })
         warn_text = None
         if warnings:
             # Preserve order but drop duplicates
-            seen = []
+            seen: List[str] = []
             for msg in warnings:
                 if msg not in seen:
                     seen.append(msg)

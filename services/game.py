@@ -2,10 +2,10 @@ from typing import Dict, Any, Tuple
 from db.database import db, now_ts
 
 # Tunables
-FANS_GAIN_PER_POP = 0.1           # fans/sec from popularity while working
-PASSIVE_PER_FAN_PER_SEC = 0.001   # passive money per fan per second
-STAM_DOWN_SEC_PER_1 = 10          # -1% per 10s working
-STAM_UP_SEC_PER_1 = 5             # +1% per 5s resting
+FANS_GAIN_PER_POP = 0.03          # fans/sec from popularity while working
+PASSIVE_PER_FAN_PER_SEC = 0.0004  # passive money per fan per second
+STAM_DOWN_SEC_PER_1 = 8           # -1% per 8s working
+STAM_UP_SEC_PER_1 = 6             # +1% per 6s resting
 
 def stamina_tick(stamina: float, is_working: bool, dt: float) -> Tuple[float, bool, float, float]:
     work_seconds = 0.0
