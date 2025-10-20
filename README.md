@@ -34,11 +34,8 @@ python -m bot
 
 - `/start` — create your agency and receive a starter girl
 - `/agency` — overview (money, total fans, roster summary)
-- `/girls` — show cards for your girls (with images if set)
+- `/girls` — interactive roster browser with pagination, toggles, and upgrades
 - `/gacha` — scout a new girl (500). Duplicate → 50% cashback
-- `/work name:` — toggle working/resting for a girl
-- `/upgrade name:` — +10% income (cost = 5 × current income)
-- `/set_image name: [url|attachment]` — set/override girl's image
 - `/reload_pool` — (admin/owner) reload girls JSON without restart
 
 ## Tech

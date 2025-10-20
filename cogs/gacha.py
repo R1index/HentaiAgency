@@ -4,6 +4,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from db.database import db, ensure_user
+from services.formatting import format_currency, format_plain, format_rate
 from services.gacha import rarity_roll, pick_by_rarity, GACHA_COST, DUP_CASHBACK, rarity_emoji
 from models.girl_pool import load_pool
 
@@ -32,7 +33,9 @@ class Gacha(commands.Cog):
         money = float(cur.fetchone()["money"])
         if money < GACHA_COST:
             con.close()
-            await interaction.response.send_message(f"Not enough funds. Need {GACHA_COST} 💵.", ephemeral=True)
+            await interaction.response.send_message(
+                f"Not enough funds. Need {format_currency(GACHA_COST)}.", ephemeral=True
+            )
             return
 
         money -= GACHA_COST
@@ -44,12 +47,28 @@ class Gacha(commands.Cog):
         if exists:
             cashback = int(GACHA_COST * DUP_CASHBACK)
             money += cashback
-            result = f"🎰 Duplicate **{g['name']}** {rarity_emoji(g['rarity'])}. Cashback: +{cashback} 💵"
+            result = (
+                f"🎰 Duplicate **{g['name']}** {rarity_emoji(g['rarity'])}. "
+                f"Cashback: +{format_currency(cashback)}"
+            )
         else:
-            cur.execute("""                INSERT INTO user_girls(user_id, name, rarity, income, popularity, fans, stamina, is_working, image_url, specialty)
-                VALUES(?,?,?,?,?,0,100,1,?,?)
-            """, (interaction.user.id, g["name"], g["rarity"], g["income"], g["popularity"], g.get("image_url"), g.get("specialty")))
-            result = f"🎉 New girl: **{g['name']}** {rarity_emoji(g['rarity'])}!\nIncome {g['income']}/s | Popularity {g['popularity']} | 🏷️ {g.get('specialty','-')}"
+            cur.execute("""
+                INSERT INTO user_girls(user_id, name, rarity, level, income, popularity, fans, stamina, is_working, image_url, specialty)
+                VALUES(?,?,?,?,?,?,0,100,1,?,?)
+            """, (
+                interaction.user.id,
+                g["name"],
+                g["rarity"],
+                1,
+                g["income"],
+                g["popularity"],
+                g.get("image_url"),
+                g.get("specialty"),
+            ))
+            result = (
+                f"🎉 New girl: **{g['name']}** {rarity_emoji(g['rarity'])}!\n"
+                f"💰 {format_rate(g['income'])} | 🌟{format_plain(g['popularity'])} | 🏷️ {g.get('specialty','-')}"
+            )
 
         cur.execute("UPDATE users SET money=? WHERE user_id=?", (money, interaction.user.id))
         con.commit()

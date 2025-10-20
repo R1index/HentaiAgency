@@ -1,91 +1,322 @@
-from typing import Optional
+from __future__ import annotations
+
+from typing import List, Optional, Sequence
+
 import discord
 from discord import app_commands
 from discord.ext import commands
+
 from db.database import db, ensure_user
+from services.formatting import format_currency, format_plain, format_rate
+from services.gacha import rarity_emoji
 from services.game import compute_tick
 
-class Girls(commands.Cog):
-    def __init__(self, bot: commands.Bot):
-        self.bot = bot
 
-    @app_commands.command(name="work", description="Toggle working/resting for a girl by name")
-    @app_commands.describe(name="Girl name (as listed in /girls or /agency)")
-    async def work(self, interaction: discord.Interaction, name: str):
-        ensure_user(interaction.user.id)
-        compute_tick(interaction.user.id)
+def _window_bounds(total: int, index: int, limit: int) -> tuple[int, int]:
+    if total <= limit:
+        return 0, total
+    half = limit // 2
+    start = max(0, index - half)
+    end = start + limit
+    if end > total:
+        end = total
+        start = end - limit
+    return start, end
+
+
+class GirlSelect(discord.ui.Select):
+    def __init__(self, view: "GirlsPaginator") -> None:
+        self.paginator = view
+        options = view.build_options()
+        super().__init__(
+            placeholder=view.select_placeholder(),
+            options=options,
+            min_values=1,
+            max_values=1,
+            row=0,
+        )
+
+    def refresh(self) -> None:
+        self.placeholder = self.paginator.select_placeholder()
+        self.options = self.paginator.build_options()
+
+    async def callback(self, interaction: discord.Interaction) -> None:  # type: ignore[override]
+        index = int(self.values[0])
+        self.paginator.page = index
+        await self.paginator.send_page(interaction)
+
+
+class GirlsPaginator(discord.ui.View):
+    def __init__(self, user_id: int, rows: Sequence[object], money: float) -> None:
+        super().__init__(timeout=180)
+        self.user_id = user_id
+        self.rows = [dict(r) for r in rows]
+        self.money = float(money)
+        self.page = 0
+        self.message: Optional[discord.Message] = None
+        self.select_menu = GirlSelect(self)
+        self.add_item(self.select_menu)
+        self.update_components()
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("You cannot manage someone else's roster.", ephemeral=True)
+            return False
+        return True
+
+    def current(self) -> dict:
+        return self.rows[self.page]
+
+    def select_placeholder(self) -> str:
+        current = self.current()
+        return f"{self.page + 1}/{len(self.rows)} • {current['name']}"
+
+    def build_options(self) -> List[discord.SelectOption]:
+        start, end = _window_bounds(len(self.rows), self.page, 25)
+        options: List[discord.SelectOption] = []
+        for idx in range(start, end):
+            row = self.rows[idx]
+            options.append(
+                discord.SelectOption(
+                    label=row["name"],
+                    value=str(idx),
+                    description=f"Lv.{int(row['level'])} • {format_rate(row['income'])}",
+                    default=idx == self.page,
+                )
+            )
+        return options
+
+    def update_components(self) -> None:
+        if not self.rows:
+            for child in self.children:
+                child.disabled = True
+            return
+        self.select_menu.refresh()
+        total = len(self.rows)
+        self.go_previous.disabled = total <= 1
+        self.go_next.disabled = total <= 1
+        current = self.current()
+        working = bool(current["is_working"])
+        self.toggle_work.label = "Send to Rest" if working else "Start Working"
+        self.toggle_work.style = (
+            discord.ButtonStyle.danger if working else discord.ButtonStyle.success
+        )
+        self.toggle_work.emoji = "🛌" if working else "💼"
+        self.upgrade_girl.label = "Upgrade (+Lv.1)"
+        self.upgrade_girl.emoji = "✨"
+
+    def roster_preview(self) -> str:
+        start, end = _window_bounds(len(self.rows), self.page, 10)
+        lines = []
+        for idx in range(start, end):
+            row = self.rows[idx]
+            marker = "➤" if idx == self.page else "•"
+            lines.append(
+                f"{marker} {idx + 1}. {row['name']} Lv.{int(row['level'])} — {format_rate(row['income'])}"
+            )
+        return "\n".join(lines)
+
+    def make_embed(self) -> discord.Embed:
+        current = self.current()
+        embed = discord.Embed(
+            title=f"{current['name']} {rarity_emoji(current['rarity'])}",
+            color=0xFF99CC,
+            description=self.roster_preview(),
+        )
+        embed.add_field(name="💼 Balance", value=format_currency(self.money), inline=True)
+        embed.add_field(name="⬆️ Level", value=str(int(current["level"])), inline=True)
+        embed.add_field(name="💰 Income", value=format_rate(current["income"]), inline=True)
+        embed.add_field(name="🌟 Popularity", value=format_plain(current["popularity"]), inline=True)
+        embed.add_field(name="❤️ Fans", value=format_plain(current["fans"]), inline=True)
+        stamina = format_plain(current["stamina"])
+        status = "Working" if current["is_working"] else "Resting"
+        embed.add_field(name="⚡ Stamina", value=f"{stamina}% • {status}", inline=True)
+        cost = round(float(current["income"]) * 5, 2)
+        embed.add_field(name="⬆️ Upgrade Cost", value=format_currency(cost), inline=True)
+        embed.add_field(name="🗂️ Specialty", value=current["specialty"] or "-", inline=True)
+        embed.set_footer(text=f"Page {self.page + 1}/{len(self.rows)}")
+        if current["image_url"]:
+            embed.set_image(url=current["image_url"])
+        return embed
+
+    async def send_page(self, interaction: discord.Interaction) -> None:
+        self.update_components()
+        await interaction.response.edit_message(embed=self.make_embed(), view=self)
+
+    def reload_state(self) -> None:
+        if not self.rows:
+            return
+        current_id = self.current()["id"]
         con = db()
         cur = con.cursor()
-        cur.execute("SELECT id, is_working FROM user_girls WHERE user_id=? AND name=?", (interaction.user.id, name))
+        cur.execute("SELECT money FROM users WHERE user_id=?", (self.user_id,))
+        row = cur.fetchone()
+        self.money = float(row["money"]) if row else 0.0
+        cur.execute(
+            "SELECT * FROM user_girls WHERE user_id=? ORDER BY rarity DESC, income DESC, name ASC",
+            (self.user_id,),
+        )
+        self.rows = [dict(r) for r in cur.fetchall()]
+        con.close()
+        if not self.rows:
+            self.page = 0
+            self.update_components()
+            return
+        for idx, row in enumerate(self.rows):
+            if row["id"] == current_id:
+                self.page = idx
+                break
+        else:
+            self.page = min(self.page, len(self.rows) - 1)
+        self.update_components()
+
+    @discord.ui.button(label="◀ Prev", style=discord.ButtonStyle.secondary, row=1)
+    async def go_previous(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
+        if not self.rows:
+            await interaction.response.send_message("No girls available.", ephemeral=True)
+            return
+        self.page = (self.page - 1) % len(self.rows)
+        await self.send_page(interaction)
+
+    @discord.ui.button(label="Next ▶", style=discord.ButtonStyle.secondary, row=1)
+    async def go_next(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
+        if not self.rows:
+            await interaction.response.send_message("No girls available.", ephemeral=True)
+            return
+        self.page = (self.page + 1) % len(self.rows)
+        await self.send_page(interaction)
+
+    @discord.ui.button(label="Toggle", style=discord.ButtonStyle.primary, row=2)
+    async def toggle_work(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
+        await interaction.response.defer(ephemeral=True, thinking=False)
+        compute_tick(self.user_id)
+        current = self.current()
+        con = db()
+        cur = con.cursor()
+        cur.execute(
+            "SELECT id, is_working FROM user_girls WHERE id=? AND user_id=?",
+            (current["id"], self.user_id),
+        )
         row = cur.fetchone()
         if not row:
             con.close()
-            await interaction.response.send_message("Girl not found.", ephemeral=True)
+            self.reload_state()
+            if self.rows:
+                await interaction.edit_original_response(embed=self.make_embed(), view=self)
+            else:
+                await interaction.edit_original_response(
+                    content="Your roster is empty now.", view=None
+                )
+            await interaction.followup.send("Girl not found anymore.", ephemeral=True)
             return
         new_state = 0 if row["is_working"] else 1
         cur.execute("UPDATE user_girls SET is_working=? WHERE id=?", (new_state, row["id"]))
         con.commit()
         con.close()
-        await interaction.response.send_message(f"{name}: {'now working' if new_state else 'now resting'}.", ephemeral=True)
+        self.reload_state()
+        await interaction.edit_original_response(embed=self.make_embed(), view=self)
+        state_text = "now resting" if new_state == 0 else "now working"
+        await interaction.followup.send(f"{current['name']} is {state_text}.", ephemeral=True)
 
-    @app_commands.command(name="upgrade", description="Increase a girl's income by +10% (cost = 5× current income)")
-    @app_commands.describe(name="Girl name (as listed in /girls or /agency)")
-    async def upgrade(self, interaction: discord.Interaction, name: str):
-        ensure_user(interaction.user.id)
-        compute_tick(interaction.user.id)
+    @discord.ui.button(label="Upgrade", style=discord.ButtonStyle.success, row=2)
+    async def upgrade_girl(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
+        await interaction.response.defer(ephemeral=True, thinking=False)
+        compute_tick(self.user_id)
+        current = self.current()
         con = db()
         cur = con.cursor()
-        cur.execute("SELECT * FROM users WHERE user_id=?", (interaction.user.id,))
+        cur.execute("SELECT money FROM users WHERE user_id=?", (self.user_id,))
         user = cur.fetchone()
-        cur.execute("SELECT * FROM user_girls WHERE user_id=? AND name=?", (interaction.user.id, name))
-        g = cur.fetchone()
-        if not g:
+        cur.execute(
+            "SELECT * FROM user_girls WHERE id=? AND user_id=?",
+            (current["id"], self.user_id),
+        )
+        girl = cur.fetchone()
+        if not user or not girl:
             con.close()
-            await interaction.response.send_message("Girl not found.", ephemeral=True)
+            self.reload_state()
+            if self.rows:
+                await interaction.edit_original_response(embed=self.make_embed(), view=self)
+            else:
+                await interaction.edit_original_response(
+                    content="Your roster is empty now.", view=None
+                )
+            await interaction.followup.send("Girl not found anymore.", ephemeral=True)
             return
-        cost = int(g["income"] * 5)
-        if user["money"] < cost:
+        cost = round(float(girl["income"]) * 5, 2)
+        if float(user["money"]) < cost:
             con.close()
-            await interaction.response.send_message(f"You need {cost} 💵.", ephemeral=True)
+            self.reload_state()
+            if self.rows:
+                await interaction.edit_original_response(embed=self.make_embed(), view=self)
+            else:
+                await interaction.edit_original_response(
+                    content="Your roster is empty now.", view=None
+                )
+            await interaction.followup.send(
+                f"Not enough funds. Need {format_currency(cost)}.",
+                ephemeral=True,
+            )
             return
-        new_income = round(g["income"] * 1.10, 2)
-        cur.execute("UPDATE user_girls SET income=? WHERE id=?", (new_income, g["id"]))
-        cur.execute("UPDATE users SET money=money-? WHERE user_id=?", (cost, interaction.user.id))
+        new_level = int(girl["level"]) + 1
+        old_income = float(girl["income"])
+        new_income = round(old_income * 1.005, 5)
+        cur.execute(
+            "UPDATE user_girls SET level=?, income=? WHERE id=?",
+            (new_level, new_income, girl["id"]),
+        )
+        cur.execute(
+            "UPDATE users SET money=money-? WHERE user_id=?",
+            (cost, self.user_id),
+        )
         con.commit()
         con.close()
-        await interaction.response.send_message(f"{name}: income {g['income']} → **{new_income}**/s (−{cost} 💵)", ephemeral=True)
+        self.reload_state()
+        await interaction.edit_original_response(embed=self.make_embed(), view=self)
+        await interaction.followup.send(
+            (
+                f"{girl['name']} upgraded to Lv.{new_level}! "
+                f"Income {format_rate(old_income)} → {format_rate(new_income)} (−{format_currency(cost)})."
+            ),
+            ephemeral=True,
+        )
 
-    @app_commands.command(name="set_image", description="Set girl's image (URL or attachment)")
-    @app_commands.describe(name="Girl name", url="Image URL (if not using an attachment)")
-    async def set_image(self, interaction: discord.Interaction, name: str, url: Optional[str] = None, attachment: Optional[discord.Attachment] = None):
+    async def on_timeout(self) -> None:
+        for child in self.children:
+            child.disabled = True
+        if self.message:
+            try:
+                await self.message.edit(view=self)
+            except discord.HTTPException:
+                pass
+
+
+class Girls(commands.Cog):
+    def __init__(self, bot: commands.Bot):
+        self.bot = bot
+
+    @app_commands.command(name="girls", description="Browse and manage your girls with an interactive roster")
+    async def girls(self, interaction: discord.Interaction) -> None:
         ensure_user(interaction.user.id)
         compute_tick(interaction.user.id)
-
-        final_url = None
-        if attachment is not None:
-            if not attachment.content_type or not attachment.content_type.startswith("image/"):
-                await interaction.response.send_message("Attachment must be an image.", ephemeral=True)
-                return
-            final_url = attachment.url
-        elif url:
-            final_url = url
-
-        if not final_url:
-            await interaction.response.send_message("Provide either an image attachment or an image URL.", ephemeral=True)
-            return
-
         con = db()
         cur = con.cursor()
-        cur.execute("SELECT id FROM user_girls WHERE user_id=? AND name=?", (interaction.user.id, name))
-        row = cur.fetchone()
-        if not row:
-            con.close()
-            await interaction.response.send_message("Girl not found.", ephemeral=True)
-            return
-        cur.execute("UPDATE user_girls SET image_url=? WHERE id=?", (final_url, row["id"]))
-        con.commit()
+        cur.execute("SELECT money FROM users WHERE user_id=?", (interaction.user.id,))
+        user_row = cur.fetchone()
+        cur.execute(
+            "SELECT * FROM user_girls WHERE user_id=? ORDER BY rarity DESC, income DESC, name ASC",
+            (interaction.user.id,),
+        )
+        rows = cur.fetchall()
         con.close()
-        await interaction.response.send_message(f"Image for **{name}** updated ✅", ephemeral=True)
+        if not rows:
+            await interaction.response.send_message("You have no girls yet. Try /gacha", ephemeral=True)
+            return
+        money = float(user_row["money"]) if user_row else 0.0
+        view = GirlsPaginator(interaction.user.id, rows, money)
+        await interaction.response.send_message(embed=view.make_embed(), view=view, ephemeral=True)
+        view.message = await interaction.original_response()
+
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(Girls(bot))
