@@ -1,8 +1,6 @@
-import os
 import discord
 from discord import app_commands
 from discord.ext import commands
-from models.girl_pool import load_pool
 
 class Admin(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -19,9 +17,12 @@ class Admin(commands.Cog):
         if not self.owner_or_admin(interaction):
             await interaction.response.send_message("Insufficient permissions.", ephemeral=True)
             return
-        path = os.getenv("GIRLS_JSON_PATH", "data/girls.json")
-        pool, warn = load_pool(path)
-        msg = f"Pool reloaded: {len(pool)} entries."
+        gacha_cog = interaction.client.get_cog("Gacha")
+        if not gacha_cog:
+            await interaction.response.send_message("Gacha cog is not loaded.", ephemeral=True)
+            return
+        count, warn = gacha_cog.reload_pool_data()
+        msg = f"Pool reloaded: {count} entries."
         if warn:
             msg += f"\n⚠️ {warn}"
         await interaction.response.send_message(msg, ephemeral=True)
