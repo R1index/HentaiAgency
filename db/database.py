@@ -27,6 +27,7 @@ def init_db():
         name TEXT NOT NULL,
         rarity TEXT NOT NULL,
         level INTEGER NOT NULL DEFAULT 1,
+        xp REAL NOT NULL DEFAULT 0,
         income REAL NOT NULL,
         popularity REAL NOT NULL,
         fans REAL NOT NULL DEFAULT 0,
@@ -49,6 +50,10 @@ def init_db():
         pass
     try:
         cur.execute("ALTER TABLE user_girls ADD COLUMN level INTEGER NOT NULL DEFAULT 1")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cur.execute("ALTER TABLE user_girls ADD COLUMN xp REAL NOT NULL DEFAULT 0")
     except sqlite3.OperationalError:
         pass
     con.commit()

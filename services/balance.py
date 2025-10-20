@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Sequence, Tuple
+from typing import Optional, Sequence, Tuple
 
 # Probability weights for each rarity. Values are percentages that add up to 100.
 RARITY_WEIGHTS: Sequence[Tuple[str, int]] = (
@@ -18,8 +18,19 @@ GACHA_COST: int = 1250
 DUP_CASHBACK: float = 0.45
 
 # Progression tuning.
-UPGRADE_COST_MULTIPLIER: float = 12.0
-UPGRADE_INCOME_GROWTH: float = 0.08
+LEVEL_INCOME_GROWTH: float = 0.05
+MAX_GIRL_LEVEL: int = 4
+
+
+def level_xp_required(level: int) -> Optional[float]:
+    """Return the XP required to reach the next level, or ``None`` if capped."""
+
+    if level >= MAX_GIRL_LEVEL:
+        return None
+    if level < 1:
+        level = 1
+    base = 10
+    return float(base * (2 ** (level - 1)))
 
 # Live game loop tuning.
 FANS_GAIN_PER_POP: float = 0.025

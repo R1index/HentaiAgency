@@ -12,7 +12,7 @@ from db.database import db, ensure_user
 from services.formatting import format_currency, format_plain, format_rate
 from services.gacha import rarity_emoji
 from services.game import compute_tick
-from services.balance import UPGRADE_COST_MULTIPLIER, UPGRADE_INCOME_GROWTH
+from services.balance import level_xp_required
 from models.girl_pool import load_pool
 
 
@@ -157,8 +157,6 @@ class GirlsPaginator(discord.ui.View):
             discord.ButtonStyle.danger if working else discord.ButtonStyle.success
         )
         self.toggle_work.emoji = "🛌" if working else "💼"
-        self.upgrade_girl.label = "Upgrade (+Lv.1)"
-        self.upgrade_girl.emoji = "✨"
 
     def roster_preview(self) -> str:
         start, end = _window_bounds(len(self.rows), self.page, 10)
@@ -179,15 +177,21 @@ class GirlsPaginator(discord.ui.View):
             description=self.roster_preview(),
         )
         embed.add_field(name="💼 Balance", value=format_currency(self.money), inline=True)
-        embed.add_field(name="⬆️ Level", value=str(int(current["level"])), inline=True)
+        current_level = int(current["level"])
+        embed.add_field(name="⬆️ Level", value=str(current_level), inline=True)
         embed.add_field(name="💰 Income", value=format_rate(current["income"]), inline=True)
         embed.add_field(name="🌟 Popularity", value=format_plain(current["popularity"]), inline=True)
         embed.add_field(name="❤️ Fans", value=format_plain(current["fans"]), inline=True)
         stamina = format_plain(current["stamina"])
         status = "Working" if current["is_working"] else "Resting"
         embed.add_field(name="⚡ Stamina", value=f"{stamina}% • {status}", inline=True)
-        cost = round(float(current["income"]) * UPGRADE_COST_MULTIPLIER, 2)
-        embed.add_field(name="⬆️ Upgrade Cost", value=format_currency(cost), inline=True)
+        xp = float(current.get("xp", 0))
+        requirement = level_xp_required(current_level)
+        if requirement is None:
+            xp_text = "MAX"
+        else:
+            xp_text = f"{int(xp)}/{int(requirement)}"
+        embed.add_field(name="📈 Experience", value=xp_text, inline=True)
         embed.add_field(name="🗂️ Specialty", value=current["specialty"] or "-", inline=True)
         embed.set_footer(text=f"Page {self.page + 1}/{len(self.rows)}")
         attachments: List[discord.File] = []
@@ -286,72 +290,6 @@ class GirlsPaginator(discord.ui.View):
         await interaction.edit_original_response(embed=embed, view=self, attachments=attachments)
         state_text = "now resting" if new_state == 0 else "now working"
         await interaction.followup.send(f"{current['name']} is {state_text}.", ephemeral=True)
-
-    @discord.ui.button(label="Upgrade", style=discord.ButtonStyle.success, row=2)
-    async def upgrade_girl(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
-        await interaction.response.defer(thinking=False)
-        compute_tick(self.user_id)
-        current = self.current()
-        con = db()
-        cur = con.cursor()
-        cur.execute("SELECT money FROM users WHERE user_id=?", (self.user_id,))
-        user = cur.fetchone()
-        cur.execute(
-            "SELECT * FROM user_girls WHERE id=? AND user_id=?",
-            (current["id"], self.user_id),
-        )
-        girl = cur.fetchone()
-        if not user or not girl:
-            con.close()
-            self.reload_state()
-            if self.rows:
-                embed, attachments = self.make_embed()
-                await interaction.edit_original_response(embed=embed, view=self, attachments=attachments)
-            else:
-                await interaction.edit_original_response(
-                    content="Your roster is empty now.", view=None
-                )
-            await interaction.followup.send("Girl not found anymore.", ephemeral=True)
-            return
-        cost = round(float(girl["income"]) * UPGRADE_COST_MULTIPLIER, 2)
-        if float(user["money"]) < cost:
-            con.close()
-            self.reload_state()
-            if self.rows:
-                embed, attachments = self.make_embed()
-                await interaction.edit_original_response(embed=embed, view=self, attachments=attachments)
-            else:
-                await interaction.edit_original_response(
-                    content="Your roster is empty now.", view=None
-                )
-            await interaction.followup.send(
-                f"Not enough funds. Need {format_currency(cost)}.",
-                ephemeral=True,
-            )
-            return
-        new_level = int(girl["level"]) + 1
-        old_income = float(girl["income"])
-        new_income = round(old_income * (1 + UPGRADE_INCOME_GROWTH), 5)
-        cur.execute(
-            "UPDATE user_girls SET level=?, income=? WHERE id=?",
-            (new_level, new_income, girl["id"]),
-        )
-        cur.execute(
-            "UPDATE users SET money=money-? WHERE user_id=?",
-            (cost, self.user_id),
-        )
-        con.commit()
-        con.close()
-        self.reload_state()
-        embed, attachments = self.make_embed()
-        await interaction.edit_original_response(embed=embed, view=self, attachments=attachments)
-        await interaction.followup.send(
-            (
-                f"{girl['name']} upgraded to Lv.{new_level}! "
-                f"Income {format_rate(old_income)} → {format_rate(new_income)} (−{format_currency(cost)})."
-            ),
-            ephemeral=True,
-        )
 
     async def on_timeout(self) -> None:
         for child in self.children:

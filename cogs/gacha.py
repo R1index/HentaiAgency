@@ -89,19 +89,36 @@ class Gacha(commands.Cog):
                 f"Cashback: +{format_currency(cashback)}"
             )
         else:
-            cur.execute("""
-                INSERT INTO user_girls(user_id, name, rarity, level, income, popularity, fans, stamina, is_working, image_url, specialty)
-                VALUES(?,?,?,?,?,?,0,100,1,?,?)
-            """, (
+            cur.execute(
+                """
+                INSERT INTO user_girls(
+                    user_id,
+                    name,
+                    rarity,
+                    level,
+                    xp,
+                    income,
+                    popularity,
+                    fans,
+                    stamina,
+                    is_working,
+                    image_url,
+                    specialty
+                )
+                VALUES(?,?,?,?,?,?,?,0,100,1,?,?)
+                """,
+                (
                 interaction.user.id,
                 g["name"],
                 g["rarity"],
                 1,
+                0,
                 g["income"],
                 g["popularity"],
                 image_reference,
                 g.get("specialty"),
-            ))
+                ),
+            )
             description = (
                 f"🎉 New girl: **{g['name']}** {rarity_emoji(g['rarity'])}!\n"
                 f"💰 {format_rate(g['income'])} | 🌟{format_plain(g['popularity'])} | 🏷️ {g.get('specialty','-')}"
