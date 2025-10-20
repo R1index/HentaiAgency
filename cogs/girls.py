@@ -12,6 +12,7 @@ from db.database import db, ensure_user
 from services.formatting import format_currency, format_plain, format_rate
 from services.gacha import rarity_emoji
 from services.game import compute_tick
+from services.balance import UPGRADE_COST_MULTIPLIER, UPGRADE_INCOME_GROWTH
 from models.girl_pool import load_pool
 
 
@@ -185,7 +186,7 @@ class GirlsPaginator(discord.ui.View):
         stamina = format_plain(current["stamina"])
         status = "Working" if current["is_working"] else "Resting"
         embed.add_field(name="⚡ Stamina", value=f"{stamina}% • {status}", inline=True)
-        cost = round(float(current["income"]) * 5, 2)
+        cost = round(float(current["income"]) * UPGRADE_COST_MULTIPLIER, 2)
         embed.add_field(name="⬆️ Upgrade Cost", value=format_currency(cost), inline=True)
         embed.add_field(name="🗂️ Specialty", value=current["specialty"] or "-", inline=True)
         embed.set_footer(text=f"Page {self.page + 1}/{len(self.rows)}")
@@ -254,7 +255,7 @@ class GirlsPaginator(discord.ui.View):
 
     @discord.ui.button(label="Toggle", style=discord.ButtonStyle.primary, row=2)
     async def toggle_work(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
-        await interaction.response.defer(ephemeral=True, thinking=False)
+        await interaction.response.defer(thinking=False)
         compute_tick(self.user_id)
         current = self.current()
         con = db()
@@ -288,7 +289,7 @@ class GirlsPaginator(discord.ui.View):
 
     @discord.ui.button(label="Upgrade", style=discord.ButtonStyle.success, row=2)
     async def upgrade_girl(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
-        await interaction.response.defer(ephemeral=True, thinking=False)
+        await interaction.response.defer(thinking=False)
         compute_tick(self.user_id)
         current = self.current()
         con = db()
@@ -312,7 +313,7 @@ class GirlsPaginator(discord.ui.View):
                 )
             await interaction.followup.send("Girl not found anymore.", ephemeral=True)
             return
-        cost = round(float(girl["income"]) * 5, 2)
+        cost = round(float(girl["income"]) * UPGRADE_COST_MULTIPLIER, 2)
         if float(user["money"]) < cost:
             con.close()
             self.reload_state()
@@ -330,7 +331,7 @@ class GirlsPaginator(discord.ui.View):
             return
         new_level = int(girl["level"]) + 1
         old_income = float(girl["income"])
-        new_income = round(old_income * 1.005, 5)
+        new_income = round(old_income * (1 + UPGRADE_INCOME_GROWTH), 5)
         cur.execute(
             "UPDATE user_girls SET level=?, income=? WHERE id=?",
             (new_level, new_income, girl["id"]),
@@ -405,7 +406,7 @@ class Girls(commands.Cog):
         money = float(user_row["money"]) if user_row else 0.0
         view = GirlsPaginator(interaction.user.id, rows, money, pool_lookup)
         embed, attachments = view.make_embed()
-        kwargs = {"embed": embed, "view": view, "ephemeral": True}
+        kwargs = {"embed": embed, "view": view}
         if attachments:
             kwargs["files"] = attachments
         await interaction.response.send_message(**kwargs)

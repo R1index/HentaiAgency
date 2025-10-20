@@ -2,36 +2,36 @@
   {
     "name": "Aya",
     "rarity": "N",
-    "income": 6,
-    "popularity": 110,
+    "income": 1.8,
+    "popularity": 70,
     "specialty": "Singer"
   },
   {
     "name": "Rin",
     "rarity": "R",
-    "income": 10,
-    "popularity": 180,
+    "income": 2.9,
+    "popularity": 120,
     "specialty": "Dancer"
   },
   {
     "name": "Miko",
     "rarity": "SR",
-    "income": 15,
-    "popularity": 320,
+    "income": 4.5,
+    "popularity": 190,
     "specialty": "Model"
   },
   {
     "name": "Sora",
     "rarity": "SSR",
-    "income": 24,
-    "popularity": 550,
+    "income": 6.8,
+    "popularity": 280,
     "specialty": "Actress"
   },
   {
     "name": "Yuki",
     "rarity": "UR",
-    "income": 40,
-    "popularity": 900,
+    "income": 10.5,
+    "popularity": 380,
     "specialty": "Influencer"
   }
 ]
